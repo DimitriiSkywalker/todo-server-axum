@@ -34,20 +34,24 @@ struct AddTask {
     description: String,
 }
 
-// Добавить задачу с пересчётом id
-async fn add_task(
+// Добавить несколько задач
+async fn add_tasks(
     State(state): State<SharedState>,
-    Json(payload): Json<AddTask>,
-) -> Json<Task> {
+    Json(payload): Json<Vec<AddTask>>,
+) -> Json<Vec<Task>> {
     let mut tasks = state.lock().await;
+    let mut new_tasks = vec![];
 
-    // Найти минимально доступный id
-    let used_ids: HashSet<u64> = tasks.iter().map(|task| task.id).collect();
-    let new_id = (1..).find(|id| !used_ids.contains(id)).unwrap();
+    for task in payload {
+        let used_ids: HashSet<u64> = tasks.iter().map(|task| task.id).collect();
+        let new_id = (1..).find(|id| !used_ids.contains(id)).unwrap();
 
-    let new_task = Task::new(new_id, payload.description);
-    tasks.push(new_task.clone());
-    Json(new_task)
+        let new_task = Task::new(new_id, task.description);
+        tasks.push(new_task.clone());
+        new_tasks.push(new_task);
+    }
+
+    Json(new_tasks)
 }
 
 // Получить список задач
@@ -56,32 +60,42 @@ async fn list_tasks(State(state): State<SharedState>) -> Json<Vec<Task>> {
     Json(tasks.clone())
 }
 
-// Пометить задачу как выполненную
-async fn complete_task(
+// Пометить задачи как выполненные
+async fn complete_tasks(
     State(state): State<SharedState>,
-    Path(id): Path<u64>,
-) -> StatusCode {
+    Json(ids): Json<Vec<u64>>,
+) -> &'static str {
     let mut tasks = state.lock().await;
-    if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
-        task.completed = true;
-        StatusCode::OK
+    let mut updated = false;
+
+    for task in tasks.iter_mut() {
+        if ids.contains(&task.id) {
+            task.completed = true;
+            updated = true;
+        }
+    }
+
+    if updated {
+        "Tasks marked as completed"
     } else {
-        StatusCode::NOT_FOUND
+        "No tasks found"
     }
 }
 
-// Удалить задачу
-async fn delete_task(
+// Удалить несколько задач
+async fn delete_tasks(
     State(state): State<SharedState>,
-    Path(id): Path<u64>,
-) -> StatusCode {
+    Json(ids): Json<Vec<u64>>,
+) -> &'static str {
     let mut tasks = state.lock().await;
     let len_before = tasks.len();
-    tasks.retain(|task| task.id != id);
+
+    tasks.retain(|task| !ids.contains(&task.id));
+
     if tasks.len() < len_before {
-        StatusCode::OK
+        "Tasks deleted"
     } else {
-        StatusCode::NOT_FOUND
+        "No tasks found"
     }
 }
 
@@ -90,8 +104,9 @@ async fn main() {
     let shared_state: SharedState = Arc::new(TokioMutex::new(Vec::new()));
 
     let app = Router::new()
-        .route("/tasks", post(add_task).get(list_tasks))
-        .route("/tasks/:id", patch(complete_task).delete(delete_task))
+        .route("/tasks", post(add_tasks).get(list_tasks))
+        .route("/tasks/batch-delete", delete(delete_tasks))
+        .route("/tasks/batch-complete", patch(complete_tasks))
         .with_state(shared_state);
 
     println!("Сервер запущен на http://127.0.0.1:3000");
@@ -100,6 +115,3 @@ async fn main() {
         .await
         .unwrap();
 }
-
-
-
