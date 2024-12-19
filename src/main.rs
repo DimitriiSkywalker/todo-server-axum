@@ -2,82 +2,92 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::{post, patch},
+    routing::{get, post, delete, patch},
     Router,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
-use uuid::Uuid;
+use tokio::sync::Mutex as TokioMutex;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Task {
+    id: u64,
+    description: String,
+    completed: bool,
+}
+
+impl Task {
+    fn new(id: u64, description: String) -> Self {
+        Self {
+            id,
+            description,
+            completed: false,
+        }
+    }
+}
+
+type SharedState = Arc<TokioMutex<Vec<Task>>>;
+
+#[derive(Deserialize)]
+struct AddTask {
+    description: String,
+}
+
+// Добавить задачу с пересчётом id
+async fn add_task(
+    State(state): State<SharedState>,
+    Json(payload): Json<AddTask>,
+) -> Json<Task> {
+    let mut tasks = state.lock().await;
+
+    // Найти минимально доступный id
+    let used_ids: HashSet<u64> = tasks.iter().map(|task| task.id).collect();
+    let new_id = (1..).find(|id| !used_ids.contains(id)).unwrap();
+
+    let new_task = Task::new(new_id, payload.description);
+    tasks.push(new_task.clone());
+    Json(new_task)
+}
+
+// Получить список задач
+async fn list_tasks(State(state): State<SharedState>) -> Json<Vec<Task>> {
+    let tasks = state.lock().await;
+    Json(tasks.clone())
+}
+
+// Пометить задачу как выполненную
+async fn complete_task(
+    State(state): State<SharedState>,
+    Path(id): Path<u64>,
+) -> StatusCode {
+    let mut tasks = state.lock().await;
+    if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
+        task.completed = true;
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
+    }
+}
+
+// Удалить задачу
+async fn delete_task(
+    State(state): State<SharedState>,
+    Path(id): Path<u64>,
+) -> StatusCode {
+    let mut tasks = state.lock().await;
+    let len_before = tasks.len();
+    tasks.retain(|task| task.id != id);
+    if tasks.len() < len_before {
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
+    }
+}
 
 #[tokio::main]
 async fn main() {
-    #[derive(Serialize, Deserialize, Debug, Clone)]
-    struct Task {
-        id: Uuid,
-        description: String,
-        completed: bool,
-    }
-
-    impl Task {
-        fn new(description: String) -> Self {
-            Self {
-                id: Uuid::new_v4(),
-                description,
-                completed: false,
-            }
-        }
-    }
-
-    type SharedState = Arc<Mutex<Vec<Task>>>;
-
-    #[derive(Deserialize)]
-    struct AddTask {
-        description: String,
-    }
-
-    async fn add_task(
-        State(state): State<SharedState>,
-        Json(payload): Json<AddTask>,
-    ) -> Json<Task> {
-        let mut tasks = state.lock().unwrap();
-        let new_task = Task::new(payload.description);
-        tasks.push(new_task.clone());
-        Json(new_task)
-    }
-
-    async fn list_tasks(State(state): State<SharedState>) -> Json<Vec<Task>> {
-        let tasks = state.lock().unwrap();
-        Json(tasks.clone())
-    }
-
-    async fn complete_task(
-        State(state): State<SharedState>,
-        Path(id): Path<Uuid>,
-    ) -> StatusCode {
-        let mut tasks = state.lock().unwrap();
-        if let Some(task) = tasks.iter_mut().find(|t| t.id == id) {
-            task.completed = true;
-            StatusCode::OK
-        } else {
-            StatusCode::NOT_FOUND
-        }
-    }
-
-    async fn delete_task(
-        State(state): State<SharedState>,
-        Path(id): Path<Uuid>,
-    ) -> StatusCode {
-        let mut tasks = state.lock().unwrap();
-        let len_before = tasks.len();
-        tasks.retain(|task| task.id != id);
-        if tasks.len() < len_before {
-            StatusCode::OK
-        } else {
-            StatusCode::NOT_FOUND
-        }
-    }
-
-    let shared_state: SharedState = Arc::new(Mutex::new(Vec::new()));
+    let shared_state: SharedState = Arc::new(TokioMutex::new(Vec::new()));
 
     let app = Router::new()
         .route("/tasks", post(add_task).get(list_tasks))
@@ -90,4 +100,6 @@ async fn main() {
         .await
         .unwrap();
 }
+
+
 
