@@ -115,3 +115,15 @@ async fn main() {
         .await
         .unwrap();
 }
+
+
+
+//curl команды для тестирования
+// добавление задач
+// curl -X POST -H "Content-Type: application/json" -d '[{"description": "Task 1"}, {"description": "Task 2"}]' http://127.0.0.1:3000/tasks
+// получение задач
+// curl -X GET http://127.0.0.1:3000/tasks
+// удаление задач
+// curl -X DELETE -H "Content-Type: application/json" -d '[1, 2]' http://127.0.0.1:3000/tasks/batch-delete
+// пометка задач как выполненные
+// curl -X PATCH -H "Content-Type: application/json" -d '[1, 2]' http://127.0.0.1:3000/tasks/batch-complete
