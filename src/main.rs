@@ -2,12 +2,12 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, delete, patch},
+    routing::{post, patch},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -102,4 +102,13 @@ async fn main() {
 }
 
 
+//curl команды для тестирования
+// добавление задач
+// curl -X POST -H "Content-Type: application/json" -d '[{"description": "Task 1"}, {"description": "Task 2"}]' http://127.0.0.1:3000/tasks
+// получение задач
+// curl -X GET http://127.0.0.1:3000/tasks
+// удаление задач
+// curl -X DELETE -H "Content-Type: application/json" -d '[1, 2]' http://127.0.0.1:3000/tasks/batch-delete
+// пометка задач как выполненные
+// curl -X PATCH -H "Content-Type: application/json" -d '[1, 2]' http://127.0.0.1:3000/tasks/batch-complete
 
